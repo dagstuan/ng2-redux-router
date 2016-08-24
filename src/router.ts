@@ -4,6 +4,7 @@ import { Injectable, ApplicationRef } from '@angular/core';
 import { Location } from '@angular/common';
 import { Router, NavigationEnd, NavigationCancel, DefaultUrlSerializer } from '@angular/router';
 import { NgRedux } from 'ng2-redux';
+import { AnonymousSubscription } from 'rxjs/subscription';
 import { Observable } from 'rxjs/Observable';
 import { UPDATE_LOCATION } from './actions';
 import {
@@ -18,17 +19,41 @@ export class NgReduxRouter {
   private initialLocation: string;
 
   private selectLocationFromState = (state) => state.router;
-  private urlState : Observable<string>;
+  private urlState : Observable<string> = null;
+
+  private stateObserver: AnonymousSubscription = null;
+  private urlStateObserver: AnonymousSubscription = null;
 
   constructor(
     private router: Router,
     private ngRedux: NgRedux<any>,
     private applicationRef: ApplicationRef,
     private location: Location
-  ) {}
+  ) {
+  }
+
+  destroy() {
+    if (this.stateObserver) {
+      /**
+       * this .complete business is kind of odd.  In theory unsubscribe should
+       * work.  In practice I needed to call a .complete :/
+       *
+       * Is it possible this is not an AnonymousSubscription?
+       */
+      if ((<any>this.stateObserver).complete) {
+        (<any>this.stateObserver).complete();
+      }
+      this.stateObserver.unsubscribe();
+      this.stateObserver = null;
+    }
+    if (this.urlStateObserver) {
+      this.urlStateObserver.unsubscribe();
+      this.urlStateObserver = null;
+    }
+  }
 
   initialize(
-    selectLocationFromState: (state: any) => string = (state) => state.router,
+    selectLocationFromState: (state: any) => Router = (state) => state.router,
     routerState$: Observable<string> = undefined
   ) {
     this.selectLocationFromState = selectLocationFromState
@@ -37,6 +62,10 @@ export class NgReduxRouter {
 
     this.listenToRouterChanges();
     this.listenToReduxChanges();
+  }
+
+  destroy() {
+
   }
 
   getDefaultUrlStateObservable() {
@@ -78,9 +107,11 @@ export class NgReduxRouter {
         type: UPDATE_LOCATION,
         payload: location
       });
-    }
+    };
 
-    this.urlState.subscribe(handleLocationChange);
+    if (!this.urlStateObserver) {
+      this.urlStateObserver = this.urlState.subscribe(handleLocationChange);
+    }
   }
 
   listenToReduxChanges() {
@@ -106,9 +137,11 @@ export class NgReduxRouter {
         });
     }
 
-    this.ngRedux
-      .select(state => this.selectLocationFromState(state))
-      .distinctUntilChanged()
-      .subscribe(handleLocationChange);
+    if (!this.stateObserver) {
+      this.stateObserver = this.ngRedux
+        .select(state => this.selectLocationFromState(state))
+        .distinctUntilChanged()
+        .subscribe(handleLocationChange);
+    }
   }
 }
