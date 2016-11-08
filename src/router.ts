@@ -2,11 +2,11 @@ import 'rxjs/add/operator/filter';
 import 'rxjs/add/operator/map';
 import { Injectable, ApplicationRef } from '@angular/core';
 import { Location } from '@angular/common';
-import { Router, NavigationEnd, NavigationCancel, DefaultUrlSerializer } from '@angular/router';
+import { Router, NavigationEnd, NavigationCancel, DefaultUrlSerializer, NavigationExtras } from '@angular/router';
 import { NgRedux } from 'ng2-redux';
 import { Observable } from 'rxjs/Observable';
 import { ISubscription } from 'rxjs/Subscription'
-import { UPDATE_LOCATION } from './actions';
+import { UPDATE_LOCATION, ReduxRouterState } from './actions';
 import {
   RouterAction,
   DefaultRouterState
@@ -18,8 +18,8 @@ export class NgReduxRouter {
   private currentLocation: string;
   private initialLocation: string;
 
-  private selectLocationFromState: (state) => string = (state) => state.router;
-  private urlState: Observable<string>;
+  private selectState: (state) => ReduxRouterState = (state) => state.router;
+  private urlState: Observable<ReduxRouterState>;
 
   private urlStateSubscription: ISubscription;
   private reduxSubscription: ISubscription;
@@ -56,7 +56,7 @@ export class NgReduxRouter {
    * example in the constructor of your root component.
    *
    *
-   * @param {(state: any) => string} selectLocationFromState Optional: If your
+   * @param {(state: any) => ReduxRouterState} selectState Optional: If your
    * router state is in a custom location, supply this argument to tell the
    * bindings where to find the router location in the state.
    * @param {Observable<string>} urlState$ Optional: If you have a custom setup
@@ -64,14 +64,14 @@ export class NgReduxRouter {
    * you can supply this argument as an Observable of the current url state.
    */
   initialize(
-    selectLocationFromState: (state: any) => string = (state) => state.router,
-    urlState$: Observable<string> = undefined
+    selectState: (state: any) => ReduxRouterState = (state) => state.router,
+    urlState$: Observable<ReduxRouterState> = undefined
   ) {
     if (this.initialized) {
       throw new Error('ng2-redux-router already initialized! If you meant to re-initialize, call destroy first.');
     }
 
-    this.selectLocationFromState = selectLocationFromState
+    this.selectState = selectState
 
     this.urlState = urlState$ || this.getDefaultUrlStateObservable();
 
@@ -83,19 +83,27 @@ export class NgReduxRouter {
   private getDefaultUrlStateObservable() {
     return this.router.events
              .filter(event => event instanceof NavigationEnd)
-             .map(event => this.location.path())
+             .map(event => ({
+               location: this.location.path()
+              }))
              .distinctUntilChanged()
   }
 
   private getLocationFromStore(useInitial: boolean = false) {
-    return this.selectLocationFromState(this.ngRedux.getState()) ||
+    return this.selectState(this.ngRedux.getState()).location ||
       (useInitial ? this.initialLocation : '');
   }
 
   private listenToRouterChanges() {
-    const handleLocationChange = (location: string) => {
-      if(this.currentLocation === location) {
+    const handleLocationChange = (state: ReduxRouterState) => {
+      
+      const location = state.location;
+      const extras = state.extras;
+
+      if(this.currentLocation === location || (state.extras && state.extras.skipLocationChange)) {
         // Dont dispatch changes if we haven't changed location.
+        // If we've changed location but don't want a location change, update internal location
+        this.currentLocation = location;
         return;
       }
 
@@ -114,7 +122,10 @@ export class NgReduxRouter {
 
       this.ngRedux.dispatch(<RouterAction>{
         type: UPDATE_LOCATION,
-        payload: location
+        payload: {
+          location:location,
+          extras: extras
+        }
       });
     }
 
@@ -122,7 +133,8 @@ export class NgReduxRouter {
   }
 
   private listenToReduxChanges() {
-    const handleLocationChange = (location: string) => {
+    const handleLocationChange = (state: ReduxRouterState) => {
+
       if (this.initialLocation === undefined) {
         // Wait for router to set initial location.
         return;
@@ -134,12 +146,12 @@ export class NgReduxRouter {
         return;
       }
 
-      this.currentLocation = location
-      this.router.navigateByUrl(location);
+      this.currentLocation = state.location;
+      this.router.navigateByUrl(state.location, state.extras);
     }
 
     this.reduxSubscription = this.ngRedux
-      .select(state => this.selectLocationFromState(state))
+      .select(state => this.selectState(state))
       .distinctUntilChanged()
       .subscribe(handleLocationChange);
   }

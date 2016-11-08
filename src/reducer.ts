@@ -1,17 +1,25 @@
 import { Action } from 'redux';
 
-import { UPDATE_LOCATION } from './actions';
-
-export const DefaultRouterState: string = '';
+import { UPDATE_LOCATION, ReduxRouterState } from './actions';
 
 export interface RouterAction extends Action {
-  payload: string
+  payload: ReduxRouterState | string
 }
 
-export function routerReducer(state: string = DefaultRouterState, action: RouterAction): string {
+export const DefaultRouterState: ReduxRouterState = { location: '' };
+
+
+
+export function routerReducer(state:ReduxRouterState = DefaultRouterState, action: RouterAction): ReduxRouterState {
   switch (action.type) {
     case UPDATE_LOCATION:
-      return action.payload || DefaultRouterState;
+      if(typeof action.payload === 'string') {
+        return {
+          location: action.payload
+        };
+      } else {
+        return action.payload || DefaultRouterState;
+      }
     default:
       return state;
   }
