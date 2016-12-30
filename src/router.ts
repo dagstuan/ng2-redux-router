@@ -129,8 +129,8 @@ export class NgReduxRouter {
       }
 
       let locationInStore = this.getLocationFromStore(true);
-      if (this.currentLocation === locationInStore) {
-        // Dont change router location if its equal to the one in the store.
+      if (this.currentLocation === locationInStore && locationInStore === location) {
+        // Dont change router location if the new location is equal to the one in the store.
         return;
       }
 
